@@ -565,6 +565,49 @@ Use this as a reference when generating CLAUDE.md. Only include practices that a
 
 ---
 
+## AWS
+
+### Runtime Identification (Critical)
+- **Never assume** a service's runtime from language alone — always verify against infra config
+- ECS indicators: `taskdef.json`, `ecs-task-definition.json`, CDK `ecs.FargateTaskDefinition`, `appspec.yml` with `ECS` hooks, `Dockerfile` in service folder
+- Lambda indicators: SAM `template.yaml` with `AWS::Serverless::Function`, CDK `lambda.Function`, handler file matching SAM `Handler` property, no `Dockerfile` in folder
+- Multi-runtime projects are common — a monorepo can have Lambda, ECS, and EC2 services side by side
+
+### AWS CDK
+- `cdk synth` to generate CloudFormation template, `cdk deploy` to deploy, `cdk diff` to preview changes
+- `cdk.json` at project root defines the CDK app entry point
+- Stacks in `*Stack.ts` — read these to understand what gets deployed where
+- `npm run build` compiles TS before `cdk` commands (check `cdk.json` `app` field)
+- Use `cdk context` for environment-specific values (account, region)
+- CDK constructs map directly to AWS resources — read construct props to find runtime, memory, timeout
+
+### AWS SAM
+- `template.yaml` defines all Lambda functions and their source folders via `CodeUri`
+- `sam build` then `sam deploy` (with `--guided` on first deploy)
+- `sam local invoke` / `sam local start-api` for local testing
+- `samconfig.toml` stores deploy parameters
+- `Handler` field in `template.yaml` is the exact entry point — read it before assuming runtime behavior
+
+### AWS Lambda
+- Each function has a single handler — check SAM `Handler` or CDK `lambda.Function` `handler` prop
+- Cold start is a concern for latency-sensitive workloads — check for provisioned concurrency config
+- Layers for shared dependencies — check if project uses Lambda Layers
+- Event sources (API Gateway, SQS, SNS, S3, EventBridge) affect how the handler is invoked
+- `Lambda@Edge` / `CloudFront Functions` are different from regular Lambda — read event schema carefully
+
+### Amazon ECS / Fargate
+- Task definition (`taskdef.json`) defines container image, CPU/memory, env vars, port mappings
+- Service definition controls desired count, load balancer, auto-scaling
+- `appspec.yml` with `ECS` deployment type → CodeDeploy blue/green deployment
+- Containers in same task can communicate via `localhost` — check for multi-container task defs
+
+### AWS CodePipeline / CodeBuild
+- `buildspec.yml` defines build phases — read to find actual build commands
+- Pipeline stages (Source → Build → Test → Deploy) visible in `pipeline.ts` or console
+- Environment variables injected via CodeBuild environment or SSM Parameter Store
+
+---
+
 ## DevOps / Infrastructure
 
 ### Docker

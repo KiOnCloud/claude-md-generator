@@ -45,13 +45,16 @@ Scan the project to identify its nature. Run these searches **in parallel**:
 - Editor: `.editorconfig`
 - Build: `Makefile`, `Justfile`, `Taskfile.yml`, `CMakeLists.txt`
 - Container: `docker-compose.yml`, `Dockerfile`
-- CI/CD: `.github/workflows/*.yml`, `.gitlab-ci.yml`, `.circleci/config.yml`
+- CI/CD: `.github/workflows/*.yml`, `.gitlab-ci.yml`, `.circleci/config.yml`, `buildspec.yml`, `appspec.yml`, `azure-pipelines.yml`, `cloudbuild.yaml`
 - Monorepo: `turbo.json`, `nx.json`, `lerna.json`
 - Env: `.env.example`, `.env.sample`
 - .NET: `appsettings.json`, `launchSettings.json`
 - Android: `AndroidManifest.xml`, `build.gradle.kts` (app-level)
 - iOS: `Info.plist`, `*.xcconfig`
 - Infra: `terraform/*.tf`, `kubernetes/*.yml`, `helm/Chart.yaml`
+- AWS: `cdk.json`, `cdk.ts`, `*Stack.ts`, `template.yaml` (SAM/CloudFormation), `taskdef.json`, `ecs-task-definition.json`, `.aws/`, `samconfig.toml`, `aws-exports.js`
+- Azure: `bicep/*.bicep`, `arm-templates/*.json`, `azure.yaml` (AZD)
+- GCP: `app.yaml`, `gcloud/`
 - Hooks: `.husky/`, `.pre-commit-config.yaml`, `.claude/hooks`
 
 **Project structure:**
@@ -76,6 +79,13 @@ Based on what you found, read the relevant files to extract:
 6. **CI/CD pipeline** — what the CI does (helps understand expected workflow)
 7. **Pre-commit hooks** — what linters/formatters run automatically (so we don't duplicate in CLAUDE.md)
 8. **Existing CLAUDE.md or .claude/ config** — check if there's already a CLAUDE.md to update rather than overwrite
+7. **Existing docs/** — check if `docs/`, `agent_docs/`, `ADR/`, or `decisions/` folders already exist before creating new ones
+8. **Runtime environment mapping** — for multi-service or monorepo projects, explicitly map each service/folder to its compute target before writing anything:
+   - Read CDK stacks (`*Stack.ts`), SAM `template.yaml`, ECS `taskdef.json` to find which Lambda functions and ECS tasks correspond to which source folders
+   - Read `appspec.yml` / `buildspec.yml` to understand CodeDeploy/CodeBuild targets
+   - Check each service's `Dockerfile` — presence strongly implies containerized deployment (ECS, App Service, Cloud Run), not Lambda
+   - **Critical:** a Lambda source folder existing in the repo does NOT mean all services run on Lambda. Attribute each service independently.
+   - Document the mapping: `{ service-folder → compute-target }` before proceeding
 
 ### Step 3: Identify Tech Stack Best Practices
 
@@ -136,6 +146,82 @@ Write the CLAUDE.md file following this structure. Only include sections that ha
 - [Commands that must be run in sequence]
 - [Files that must stay in sync]
 ```
+
+### Step 4.5: Generate docs/ Artifacts (if infrastructure is present)
+
+For projects with detected cloud infrastructure (AWS CDK/SAM/ECS, Azure, GCP, Terraform, Kubernetes), generate structured docs **before** writing CLAUDE.md, then reference them from it.
+
+Only create files that don't already exist. If a file exists, update it instead.
+
+#### `docs/architecture.md`
+
+```markdown
+# Architecture Overview
+
+## Services
+
+| Service | Source Folder | Compute Target | Runtime |
+|---------|--------------|----------------|---------|
+| <name>  | `<path>`     | ECS Task / Lambda / EC2 / App Service / Cloud Run | <lang/version> |
+
+## Infrastructure
+
+- Cloud: AWS / Azure / GCP
+- IaC: CDK / SAM / Terraform / Bicep / CloudFormation
+- CI/CD: GitHub Actions / CodePipeline / Azure DevOps / Cloud Build
+
+## Data Stores
+
+| Store | Type | Access |
+|-------|------|--------|
+| <name> | RDS PostgreSQL / DynamoDB / S3 / Redis / etc. | <which services> |
+
+## Key Data Flows
+
+- [e.g. API Gateway → Lambda → DynamoDB]
+- [e.g. User request → ALB → ECS backend → RDS]
+```
+
+#### `docs/decisions/` (ADRs)
+
+Create an `ADR-000-template.md` if no ADRs exist yet:
+
+```markdown
+# ADR-000: [Title]
+
+**Status:** Proposed | Accepted | Deprecated | Superseded
+**Date:** YYYY-MM-DD
+
+## Context
+[What is the issue that motivates this decision?]
+
+## Decision
+[What is the change that we're proposing and/or doing?]
+
+## Consequences
+[What becomes easier or harder as a result of this change?]
+```
+
+#### `docs/runbooks/`
+
+Create runbooks only for operations that are non-obvious or project-specific. Skip if the deployment is fully automated with no manual steps. Common runbooks to generate if relevant:
+
+- `deploy.md` — step-by-step deploy process, including any manual approval gates
+- `rollback.md` — how to roll back a bad deploy (ECS task revision, Lambda alias, etc.)
+- `database-migration.md` — migration run order, how to verify, how to roll back
+
+#### Reference from CLAUDE.md
+
+In the generated CLAUDE.md, reference these files instead of duplicating their content:
+
+```markdown
+## Infrastructure
+- Architecture overview: see `docs/architecture.md`
+- ADRs: see `docs/decisions/`
+- Deploy / rollback runbooks: see `docs/runbooks/`
+```
+
+---
 
 ## Writing Rules — The Meta-Rules
 
@@ -200,6 +286,8 @@ After writing the CLAUDE.md, output a brief "Next Steps" section to the user (NO
 - Create `CLAUDE.local.md` for personal preferences (add to `.gitignore`)
 - Create nested `<dir>/CLAUDE.md` for directory-specific rules (if monorepo or large project)
 - Create `agent_docs/` folder for detailed guidelines referenced from CLAUDE.md (if large project)
+- Review `docs/architecture.md` for accuracy — especially the service → compute target table (if generated)
+- Add real ADRs to `docs/decisions/` to document past architectural choices (if generated)
 - Set up pre-commit hooks if linters exist but no hooks are configured
 - Use `# <instruction>` shortcut in Claude Code to add rules on-the-fly as you discover them
 
@@ -214,3 +302,5 @@ Before writing the file, verify:
 - [ ] Total instructions stay within budget (~100 lines max)
 - [ ] Every instruction passes the 80% relevance test
 - [ ] File is configuration, not documentation — no explanatory prose
+- [ ] Each service's compute target is verified from infra config (CDK/SAM/task defs), not inferred from source folder names
+- [ ] Infra/architecture details are in `docs/` and referenced from CLAUDE.md, not duplicated inline
